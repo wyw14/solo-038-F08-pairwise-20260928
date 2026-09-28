@@ -24,6 +24,10 @@ func NewRouter(runtime *service.Runtime) http.Handler {
 		api.Get("/interlocks", handler.interlocks)
 		api.Get("/incidents", handler.incidents)
 		api.Get("/recovery", handler.recoveryStatus)
+		api.Get("/splice/handovers", handler.spliceHandovers)
+		api.Post("/splice/handovers", handler.requestSpliceHandover)
+		api.Post("/splice/handovers/accept", handler.acceptSpliceHandover)
+		api.Post("/splice/handovers/withdraw", handler.withdrawSpliceHandover)
 		api.Post("/jobs/current/cancel", handler.cancelCurrent)
 	})
 	return router

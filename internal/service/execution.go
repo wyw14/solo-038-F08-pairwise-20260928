@@ -285,11 +285,12 @@ func (runtime *Runtime) finishOutputOperation(current model.Job) error {
 }
 
 func (runtime *Runtime) spliceOperation(ctx context.Context, current model.Job) error {
-	operation, err := runtime.spliceControl.Prepare(string(current.ID), 20, nil, time.Now())
+	now := time.Now()
+	operation, lease, err := runtime.spliceControl.Prepare(string(current.ID), 20, nil, now)
 	if err != nil {
 		return err
 	}
-	if err := runtime.spliceControl.StartWorker(ctx, operation, 5*time.Millisecond); err != nil {
+	if err := runtime.spliceControl.StartWorker(ctx, operation, lease, 5*time.Millisecond); err != nil {
 		return err
 	}
 	time.Sleep(6 * time.Millisecond)
@@ -297,7 +298,20 @@ func (runtime *Runtime) spliceOperation(ctx context.Context, current model.Job) 
 	if runtime.spliceControl.FestoonAvailable() < 0 || len(runtime.festoon.Reservations()) == 0 {
 		return fmt.Errorf("splice festoon reservation is invalid")
 	}
-	if err := runtime.spliceControl.Cancel(operation, time.Now()); err != nil {
+	if _, err := runtime.spliceControl.RequestHandover(lease, "relief-operator", 30*time.Second, now); err != nil {
+		return err
+	}
+	handover, reliefLease, err := runtime.spliceControl.AcceptHandover("relief-operator", 10*time.Second, time.Now())
+	if err != nil {
+		return err
+	}
+	if handover.Operation != operation || handover.FromFence >= handover.ToFence {
+		return fmt.Errorf("splice handover record is incomplete")
+	}
+	if err := runtime.spliceControl.Cancel(operation, lease, time.Now()); err == nil {
+		return fmt.Errorf("splice instruction with a pre-handover lease was not rejected")
+	}
+	if err := runtime.spliceControl.Cancel(operation, reliefLease, time.Now()); err != nil {
 		return err
 	}
 	standalone := splice.NewState()
