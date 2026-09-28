@@ -54,3 +54,41 @@ func (manager *LeaseManager) Release(lease Lease) bool {
 	manager.active = Lease{}
 	return true
 }
+
+// Pin extends the lifetime of a matching lease without changing owner or
+// fence. It keeps the outgoing operator responsible while a handover is
+// awaiting acceptance.
+func (manager *LeaseManager) Pin(lease Lease, until time.Time) bool {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if lease.ID != manager.active.ID || lease.Fence != manager.active.Fence {
+		return false
+	}
+	if until.After(manager.active.ExpiresAt) {
+		manager.active.ExpiresAt = until.UTC()
+	}
+	return true
+}
+
+// Transfer moves the window to a new owner with a fresh id and fence. The
+// previous lease must match the active one exactly, so only the responsible
+// owner (or a confirmed handover) can move the seam.
+func (manager *LeaseManager) Transfer(previous Lease, owner string, ttl time.Duration, now time.Time) (Lease, error) {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if owner == "" || ttl <= 0 {
+		return Lease{}, fmt.Errorf("splice lease owner and ttl are required")
+	}
+	if previous.ID != manager.active.ID || previous.Fence != manager.active.Fence {
+		return Lease{}, fmt.Errorf("splice lease transfer fence rejected")
+	}
+	manager.fence++
+	manager.active = Lease{ID: model.NewLeaseID(), Owner: owner, Fence: manager.fence, ExpiresAt: now.Add(ttl).UTC()}
+	return manager.active, nil
+}
+
+func (manager *LeaseManager) Snapshot() Lease {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	return manager.active
+}

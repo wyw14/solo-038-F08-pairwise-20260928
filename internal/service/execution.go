@@ -285,11 +285,13 @@ func (runtime *Runtime) finishOutputOperation(current model.Job) error {
 }
 
 func (runtime *Runtime) spliceOperation(ctx context.Context, current model.Job) error {
-	operation, err := runtime.spliceControl.Prepare(string(current.ID), 20, nil, time.Now())
+	owner := string(current.ID)
+	now := time.Now()
+	operation, err := runtime.spliceControl.Prepare(owner, 20, nil, now)
 	if err != nil {
 		return err
 	}
-	if err := runtime.spliceControl.StartWorker(ctx, operation, 5*time.Millisecond); err != nil {
+	if err := runtime.spliceControl.StartWorker(ctx, owner, operation, 5*time.Millisecond); err != nil {
 		return err
 	}
 	time.Sleep(6 * time.Millisecond)
@@ -297,15 +299,16 @@ func (runtime *Runtime) spliceOperation(ctx context.Context, current model.Job) 
 	if runtime.spliceControl.FestoonAvailable() < 0 || len(runtime.festoon.Reservations()) == 0 {
 		return fmt.Errorf("splice festoon reservation is invalid")
 	}
-	if err := runtime.spliceControl.Cancel(operation, time.Now()); err != nil {
+	if err := runtime.spliceControl.Cancel(owner, operation, time.Now()); err != nil {
 		return err
 	}
 	standalone := splice.NewState()
 	standaloneOperation := model.NewOperationID()
-	if err := standalone.Begin(standaloneOperation, model.NewLeaseID(), time.Now()); err != nil {
+	standaloneLease := model.NewLeaseID()
+	if err := standalone.Begin(standaloneOperation, standaloneLease, 1, time.Now()); err != nil {
 		return err
 	}
-	if _, err := splice.CancelOutcome(standalone, standaloneOperation, "operator cancel", time.Now()); err != nil {
+	if _, err := splice.CancelOutcome(standalone, standaloneOperation, standaloneLease, "operator cancel", time.Now()); err != nil {
 		return err
 	}
 	return nil

@@ -103,6 +103,7 @@ func (runtime *Runtime) Start(ctx context.Context) error {
 			return err
 		}
 	}
+	runtime.spliceControl.StartSweeper(ctx, 250*time.Millisecond)
 	return nil
 }
 
